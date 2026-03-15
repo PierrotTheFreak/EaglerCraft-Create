@@ -46,14 +46,49 @@ jobs:
       - name: Build project
         run: ./gradlew ${{ inputs.task || 'build' }} --no-daemon
 
+      - name: List build outputs (debug)
+        if: always()
+        run: |
+          echo "=== Workspace root ==="
+          ls -la
+          echo "=== build/ directory (if exists) ==="
+          find build -type f 2>/dev/null | head -60 || echo "(no build/ dir)"
+          echo "=== Any .html files anywhere ==="
+          find . -name "*.html" -not -path "./.git/*" 2>/dev/null
+          echo "=== Any .wasm files anywhere ==="
+          find . -name "*.wasm" -not -path "./.git/*" 2>/dev/null
+
       - name: Commit build output files
         if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --cached --quiet || git commit -m "ci: build output from task '${{ inputs.task || 'build' }}' [skip ci]"
-          git push
+
+          # Force-add build outputs, bypassing .gitignore
+          # -f means "ignore .gitignore rules" so build/ files get staged
+          git add -f build/ 2>/dev/null || true
+
+          # Also force-add common output locations your task might use
+          git add -f *.html 2>/dev/null || true
+          git add -f *.js 2>/dev/null || true
+          git add -f *.wasm 2>/dev/null || true
+          git add -f dist/ 2>/dev/null || true
+          git add -f out/ 2>/dev/null || true
+          git add -f output/ 2>/dev/null || true
+          git add -f www/ 2>/dev/null || true
+          git add -f web/ 2>/dev/null || true
+          git add -f public/ 2>/dev/null || true
+
+          # Check if anything was actually staged
+          if git diff --cached --quiet; then
+            echo "No build outputs to commit."
+          else
+            echo "Staged files:"
+            git diff --cached --name-only
+            git commit -m "ci: build output from '${{ inputs.task || 'build' }}' [skip ci]"
+            git push
+            echo "Build outputs committed and pushed."
+          fi
 
   dependency-submission:
 
